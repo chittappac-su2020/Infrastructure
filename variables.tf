@@ -52,3 +52,23 @@ variable "key_name"{
     type = string
     default = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC52lyxcptCUIAinfU/C7zEWWRt7e2GjPXyYyfV9Lp1OrXkNDqe7Yj3btvNLcl8AZpx/HQTw+CTflsF1wCTRicMSvActwJ5ZQpKyhU43ohcXd+ZmQx9t9O84ZZ88eunuY3UbqgGkC+hwHnhjGNSQg2S7X4tm9Ay6ZmIE8MgJKCXwLsxIvTl5CJP9VdePsbLwj5FDjv4xq/NAl5xuZnwMEwrBkmMuf+O7wtOT/zblK8anPRTok8Gxb5MbqUIPh7dhuK4v8upIVcKLI+aqxPLunSFsk3tZBkFS05IHiC7Qy3cCxZq1Cy+kKTK7crbDjaame4OPARl6bGDpcxPtItZSUAb apple@Apples-MacBook-Pro.local"
 }
+
+variable "access_key"{
+    type = string
+    default = "AKIAIHONCE3NH5AHHDHA"
+}
+
+variable "secret_key"{
+    type = string
+    default = "IOGLL6Uc95eNrV6+54ZQSib46MU801dKoChvZXZO"
+}
+
+variable "dname"{
+    type = string
+    default = "chandrakanthchittappa.site"
+}
+
+variable "AMIid"{
+    type = string
+    default = "ami-0aa9a3ed6b0819ca2"
+}
