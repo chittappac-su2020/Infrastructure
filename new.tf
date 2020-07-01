@@ -339,8 +339,6 @@ resource "aws_instance" "webinstance" {
                 sudo echo S3_BUCKET_NAME=${aws_s3_bucket.webapp.bucket} >> userdata.txt
                 sudo echo APPLICATION_ENV=prod >> userdata.txt   
                 sudo echo bucket=webapp.chandrakanth.chittappa >> userdata.txt
-                sudo echo AWSAccessKeyId=${var.access_key} >> userdata.txt
-                sudo echo AWSSecretKey=${var.secret_key} >> userdata.txt
                 chmod 765 userdata.txt
   EOF
 }
