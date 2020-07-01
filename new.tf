@@ -266,8 +266,6 @@ resource "aws_db_instance" "csye6225" {
   skip_final_snapshot        = "true"
 }
 
-#made changes
-
 resource "aws_iam_role" "CodeDeployServiceRole" {
   name = "CodeDeployServiceRole"
   path = "/"
@@ -313,11 +311,6 @@ resource "aws_iam_role" "CodeDeployEC2ServiceRole" {
 EOF
 }
 
-resource "aws_iam_instance_profile" "deployment_profile" {
-  name = "deployment_profile"
-  role = aws_iam_role.CodeDeployEC2ServiceRole.name
-}
-
 resource "aws_instance" "webinstance" {
   ami           = var.AMIid
   instance_type = "t2.micro"
@@ -352,6 +345,10 @@ resource "aws_instance" "webinstance" {
   EOF
 }
 
+resource "aws_iam_instance_profile" "deployment_profile" {
+  name = "deployment_profile"
+  role = aws_iam_role.CodeDeployEC2ServiceRole.name
+}
 
 resource "aws_dynamodb_table" "csye6225" {
   name             = "csye6225"
@@ -425,8 +422,6 @@ resource "aws_iam_instance_profile" "s3_profile" {
   name = "s3_profile_for_webapp"
   role = aws_iam_role.EC2_CSYE6225.name
 }
-
-#started here for last assignment 
 
 resource "aws_s3_bucket" "codedeploy" {
   bucket = "codedeploy.chandrakanthchittappa.site"
@@ -600,21 +595,6 @@ resource "aws_iam_policy" "circleci-ec2-ami" {
   ]
 }
 EOF
-}
-
-resource "aws_iam_user_policy_attachment" "policy-attach-2" {
-  user       = "cicd"
-  policy_arn = "${aws_iam_policy.circleci-ec2-ami.arn}"
-}
-
-resource "aws_iam_user_policy_attachment" "policy-attach-1" {
-  user       = "cicd"
-  policy_arn = "${aws_iam_policy.CircleCI-Code-Deploy.arn}"
-}
-
-resource "aws_iam_user_policy_attachment" "policy-attach" {
-  user       = "cicd"
-  policy_arn = "${aws_iam_policy.CircleCI-Upload-To-S3.arn}"
 }
 
 resource "aws_iam_role_policy_attachment" "codedeploy_role_ec2role" {
