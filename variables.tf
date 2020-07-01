@@ -1,3 +1,4 @@
+//This is variables file
 variable "aws_region"{
     type = string
 }
@@ -69,5 +70,4 @@ variable "dname"{
 
 variable "AMIid"{
     type = string
-    default = "ami-0aa9a3ed6b0819ca2"
 }
