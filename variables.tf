@@ -1,6 +1,6 @@
+//This is variables file
 variable "aws_region"{
     type = string
-    default = "us-east-1"
 }
 
 variable "vpc_cidr"{
@@ -70,5 +70,4 @@ variable "dname"{
 
 variable "AMIid"{
     type = string
-    default = "ami-0aa9a3ed6b0819ca2"
 }
