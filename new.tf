@@ -164,6 +164,12 @@ resource "aws_security_group" "application" {
       protocol = "tcp"
       ipv6_cidr_blocks = ["::/0"]
   }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
   tags = {
     "Name" = "application"
   }
@@ -192,6 +198,7 @@ resource "aws_kms_key" "mykey" {
 resource "aws_s3_bucket" "webapp" {
   bucket = "webapp.chandrakanth.chittappa"
   acl    = "private"
+  force_destroy = true
 
   lifecycle_rule {
     id      = "log"
@@ -218,6 +225,12 @@ resource "aws_s3_bucket" "webapp" {
         sse_algorithm     = "aws:kms"
       }
     }
+  }
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["PUT", "POST", "GET"]
+    allowed_origins = ["*"]
   }
 }
 
@@ -253,14 +266,67 @@ resource "aws_db_instance" "csye6225" {
   skip_final_snapshot        = "true"
 }
 
+#made changes
+
+resource "aws_iam_role" "CodeDeployServiceRole" {
+  name = "CodeDeployServiceRole"
+  path = "/"
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "codedeploy.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+
+  tags = {
+    Name = "CodeDeployServiceRole"
+  }
+}
+
+resource "aws_iam_role" "CodeDeployEC2ServiceRole" {
+  name = "CodeDeployEC2ServiceRole"
+  path = "/"
+  force_detach_policies = "true"
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_instance_profile" "deployment_profile" {
+  name = "deployment_profile"
+  role = aws_iam_role.CodeDeployEC2ServiceRole.name
+}
+
 resource "aws_instance" "webinstance" {
-  ami           = "ami-0c614a46ecac272cb"
+  ami           = var.AMIid
   instance_type = "t2.micro"
-  vpc_security_group_ids = [aws_security_group.application.id]
-  disable_api_termination = false
-  instance_initiated_shutdown_behavior = "stop"
-  subnet_id   = aws_subnet.subnet.id
+  vpc_security_group_ids = ["${aws_security_group.application.id}"]
+  subnet_id   = "${aws_subnet.subnet.id}"
+  iam_instance_profile = "${aws_iam_instance_profile.deployment_profile.name}"
+  associate_public_ip_address = "true"
   key_name = "ssh"
+  disable_api_termination = false
   
   root_block_device {
     volume_size = 20
@@ -273,14 +339,19 @@ resource "aws_instance" "webinstance" {
 
   user_data = <<-EOF
                 #!/bin/bash
-                sudo touch userdata.sh\n
-                sudo echo export RDS_USERNAME=${aws_db_instance.csye6225.name} >> userdata.sh
-                sudo echo export RDS_PASSWORD=${aws_db_instance.csye6225.password} >> userdata.sh
-                sudo echo export RDS_HOSTNAME=${aws_db_instance.csye6225.address} >> userdata.sh
-                sudo echo export S3_BUCKET_NAME=${aws_s3_bucket.webapp.bucket} >> userdata.sh
-                
+                sudo echo RDS_USERNAME=${aws_db_instance.csye6225.username} >> userdata.txt
+                sudo echo RDS_DATABASE_NAME=${aws_db_instance.csye6225.name} >> userdata.txt
+                sudo echo RDS_PASSWORD=${aws_db_instance.csye6225.password} >> userdata.txt
+                sudo echo RDS_HOSTNAME=${aws_db_instance.csye6225.address} >> userdata.txt
+                sudo echo S3_BUCKET_NAME=${aws_s3_bucket.webapp.bucket} >> userdata.txt
+                sudo echo APPLICATION_ENV=prod >> userdata.txt   
+                sudo echo bucket=webapp.chandrakanth.chittappa >> userdata.txt
+                sudo echo AWSAccessKeyId=${var.access_key} >> userdata.txt
+                sudo echo AWSSecretKey=${var.secret_key} >> userdata.txt
+                chmod 765 userdata.txt
   EOF
 }
+
 
 resource "aws_dynamodb_table" "csye6225" {
   name             = "csye6225"
@@ -294,6 +365,8 @@ resource "aws_dynamodb_table" "csye6225" {
     type = "S"
   }
 }
+
+#
 
 resource "aws_iam_policy" "WebAppS3" {
   name        = "WebAppS3"
@@ -311,8 +384,8 @@ resource "aws_iam_policy" "WebAppS3" {
             ],
             "Effect": "Allow",
             "Resource": [
-                "arn:aws:s3:::${aws_s3_bucket.webapp.bucket}",
-                "arn:aws:s3:::${aws_s3_bucket.webapp.bucket}/*"
+                "arn:aws:s3:::${aws_s3_bucket.codedeploy.bucket}",
+                "arn:aws:s3:::${aws_s3_bucket.codedeploy.bucket}/*"
             ]
         }
     ]
@@ -347,6 +420,287 @@ resource "aws_iam_role_policy_attachment" "EC2-CSYE6225_WebAppS3" {
   role       = aws_iam_role.EC2_CSYE6225.name
   policy_arn = aws_iam_policy.WebAppS3.arn
 }
+
+resource "aws_iam_instance_profile" "s3_profile" {
+  name = "s3_profile_for_webapp"
+  role = aws_iam_role.EC2_CSYE6225.name
+}
+
+#started here for last assignment 
+
+resource "aws_s3_bucket" "codedeploy" {
+  bucket = "codedeploy.chandrakanthchittappa.site"
+  acl    = "private"
+  force_destroy = "true"
+  tags = "${
+      map(
+        "Name", "${var.dname}",
+        )
+    }"
+
+  lifecycle_rule {
+    id      = "log/"
+    enabled = true
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+    expiration {
+      days = 60
+    }
+  }
+}
+
+resource "aws_iam_policy" "CodeDeploy-EC2-S3" {
+  name        = "CodeDeploy-EC2-S3"
+  path        = "/"
+  description = "Allows EC2 instances to read data from S3 buckets"
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "s3:Get*",
+        "s3:List*",
+        "s3:DeleteObject"
+	    ],
+      "Effect": "Allow",
+      "Resource": [
+        "${aws_s3_bucket.codedeploy.arn}",
+		 	  "${aws_s3_bucket.codedeploy.arn}/*"
+      ]
+    }
+  ]
+}
+  EOF
+}
+
+resource "aws_iam_policy" "CircleCI-Upload-To-S3" {
+  name        = "CircleCI-Upload-To-S3"
+  path        = "/"
+  description = "Allows CircleCI to upload artifacts from latest successful build to dedicated S3 bucket used by code deploy"
+  policy = <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+          "Action": [
+            "s3:PutObject",
+            "s3:PutObjectAcl",
+            "s3:Get*",
+            "s3:List*"
+            ],
+			    "Effect": "Allow",
+          "Resource": [
+            "${aws_s3_bucket.codedeploy.arn}",
+            "${aws_s3_bucket.codedeploy.arn}/*"
+          ] 
+			}
+    ]
+}
+EOF
+}
+
+data "aws_caller_identity" "current" {}
+
+locals {
+  user_account_id = "${data.aws_caller_identity.current.account_id}"
+}
+
+resource "aws_iam_policy" "CircleCI-Code-Deploy" {
+  name        = "CircleCI-Code-Deploy"
+  path        = "/"
+  description = "Allows CircleCI to call CodeDeploy APIs to initiate application deployment on EC2 instances"
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "codedeploy:RegisterApplicationRevision",
+        "codedeploy:GetApplicationRevision"
+      ],
+      "Resource":
+        "arn:aws:codedeploy:${var.aws_region}:${local.user_account_id}:application:${aws_codedeploy_app.csye6225-webapp.name}"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "codedeploy:CreateDeployment",
+        "codedeploy:GetDeployment"
+      ],
+      "Resource": "*"
+  },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "codedeploy:GetDeploymentConfig"
+      ],
+      "Resource": [
+        "arn:aws:codedeploy:${var.aws_region}:${local.user_account_id}:deploymentconfig:CodeDeployDefault.OneAtATime",
+        "arn:aws:codedeploy:${var.aws_region}:${local.user_account_id}:deploymentconfig:CodeDeployDefault.HalfAtATime",
+        "arn:aws:codedeploy:${var.aws_region}:${local.user_account_id}:deploymentconfig:CodeDeployDefault.AllAtOnce"
+	  ]
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_policy" "circleci-ec2-ami" {
+  name = "circleci-ec2-ami"
+  path = "/"
+  description = "This policy helps to avoid credentials"
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AttachVolume",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:CopyImage",
+        "ec2:CreateImage",
+        "ec2:CreateKeypair",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateSnapshot",
+        "ec2:CreateTags",
+        "ec2:CreateVolume",
+        "ec2:DeleteKeyPair",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteSnapshot",
+        "ec2:DeleteVolume",
+        "ec2:DeregisterImage",
+        "ec2:DescribeImageAttribute",
+        "ec2:DescribeImages",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceStatus",
+        "ec2:DescribeRegions",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSnapshots",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeTags",
+        "ec2:DescribeVolumes",
+        "ec2:DetachVolume",
+        "ec2:GetPasswordData",
+        "ec2:ModifyImageAttribute",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifySnapshotAttribute",
+        "ec2:RegisterImage",
+        "ec2:RunInstances",
+        "ec2:StopInstances",
+        "ec2:TerminateInstances"
+      ],
+      "Resource": "${aws_s3_bucket.codedeploy.arn}"
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_user_policy_attachment" "policy-attach-2" {
+  user       = "cicd"
+  policy_arn = "${aws_iam_policy.circleci-ec2-ami.arn}"
+}
+
+resource "aws_iam_user_policy_attachment" "policy-attach-1" {
+  user       = "cicd"
+  policy_arn = "${aws_iam_policy.CircleCI-Code-Deploy.arn}"
+}
+
+resource "aws_iam_user_policy_attachment" "policy-attach" {
+  user       = "cicd"
+  policy_arn = "${aws_iam_policy.CircleCI-Upload-To-S3.arn}"
+}
+
+resource "aws_iam_role_policy_attachment" "codedeploy_role_ec2role" {
+    role       = "${aws_iam_role.CodeDeployEC2ServiceRole.name}"
+    policy_arn = "${aws_iam_policy.CodeDeploy-EC2-S3.arn}"
+}
+
+resource "aws_iam_role_policy_attachment" "codedeploy_role_servicerole" {
+ role       = "${aws_iam_role.CodeDeployServiceRole.name}"
+ policy_arn = "arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole"
+}
+
+resource "aws_codedeploy_app" "csye6225-webapp" {
+  compute_platform = "Server"
+  name             = "csye6225-webapp"
+}
+
+resource "aws_codedeploy_deployment_group" "csye6225-webapp-deployment" {
+  app_name              = "${aws_codedeploy_app.csye6225-webapp.name}"
+  deployment_group_name = "csye6225-webapp-deployment"
+  deployment_config_name = "CodeDeployDefault.AllAtOnce"
+  service_role_arn      = "${aws_iam_role.CodeDeployServiceRole.arn}"
+
+  ec2_tag_set {
+    ec2_tag_filter {
+      key   = "Name"
+      type  = "KEY_AND_VALUE"
+      value = "Wep_App_Instance"
+    }
+  }
+
+  deployment_style {
+    deployment_option = "WITHOUT_TRAFFIC_CONTROL"
+    deployment_type = "IN_PLACE"
+  }
+
+  auto_rollback_configuration {
+    enabled = true
+    events  = ["DEPLOYMENT_FAILURE"]
+  }
+
+  alarm_configuration {
+    alarms  = ["my-alarm-name"]
+    enabled = true
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
