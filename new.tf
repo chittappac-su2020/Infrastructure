@@ -190,13 +190,8 @@ resource "aws_security_group" "database" {
   }
 }
 
-resource "aws_kms_key" "mykey" {
-  description             = "This key is used to encrypt bucket objects"
-  deletion_window_in_days = 10
-}
-
 resource "aws_s3_bucket" "webapp" {
-  bucket = "webapp.chandrakanth.chittappa"
+  bucket = "webapp.chandrakanth.chittappac"
   acl    = "private"
   force_destroy = true
 
@@ -221,8 +216,7 @@ resource "aws_s3_bucket" "webapp" {
   server_side_encryption_configuration {
     rule {
       apply_server_side_encryption_by_default {
-        kms_master_key_id = aws_kms_key.mykey.arn
-        sse_algorithm     = "aws:kms"
+        sse_algorithm     = "AES256"
       }
     }
   }
@@ -311,6 +305,11 @@ resource "aws_iam_role" "CodeDeployEC2ServiceRole" {
 EOF
 }
 
+resource "aws_iam_instance_profile" "deployment_profile" {
+  name = "deployment_profile"
+  role = aws_iam_role.CodeDeployEC2ServiceRole.name
+}
+
 resource "aws_instance" "webinstance" {
   ami           = var.AMIid
   instance_type = "t2.micro"
@@ -338,15 +337,13 @@ resource "aws_instance" "webinstance" {
                 sudo echo RDS_HOSTNAME=${aws_db_instance.csye6225.address} >> userdata.txt
                 sudo echo S3_BUCKET_NAME=${aws_s3_bucket.webapp.bucket} >> userdata.txt
                 sudo echo APPLICATION_ENV=prod >> userdata.txt   
-                sudo echo bucket=webapp.chandrakanth.chittappa >> userdata.txt
+                sudo echo bucket=webapp.chandrakanth.chittappac >> userdata.txt
+                sudo echo AWSAccessKeyId=${var.access_key} >> userdata.txt
+                sudo echo AWSSecretKey=${var.secret_key} >> userdata.txt
                 chmod 765 userdata.txt
   EOF
 }
 
-resource "aws_iam_instance_profile" "deployment_profile" {
-  name = "deployment_profile"
-  role = aws_iam_role.CodeDeployEC2ServiceRole.name
-}
 
 resource "aws_dynamodb_table" "csye6225" {
   name             = "csye6225"
@@ -373,6 +370,9 @@ resource "aws_iam_policy" "WebAppS3" {
     "Statement": [
         {
             "Action": [
+                "s3:Put*",
+                "s3:Delete*",
+                "s3:Get*",
                 "s3:PutObject",
                 "s3:GetObject",
                 "s3:DeleteObject"
@@ -380,7 +380,9 @@ resource "aws_iam_policy" "WebAppS3" {
             "Effect": "Allow",
             "Resource": [
                 "arn:aws:s3:::${aws_s3_bucket.codedeploy.bucket}",
-                "arn:aws:s3:::${aws_s3_bucket.codedeploy.bucket}/*"
+                "arn:aws:s3:::${aws_s3_bucket.codedeploy.bucket}/*",
+                "arn:aws:s3:::${aws_s3_bucket.webapp.bucket}",
+                "arn:aws:s3:::${aws_s3_bucket.webapp.bucket}/*"
             ]
         }
     ]
@@ -421,8 +423,10 @@ resource "aws_iam_instance_profile" "s3_profile" {
   role = aws_iam_role.EC2_CSYE6225.name
 }
 
+#started here for last assignment 
+
 resource "aws_s3_bucket" "codedeploy" {
-  bucket = "codedeploy.chandrakanthchittappa.site"
+  bucket = "codedeploy.chandrakanthchittappa.site.tld"
   acl    = "private"
   force_destroy = "true"
   tags = "${
@@ -443,6 +447,12 @@ resource "aws_s3_bucket" "codedeploy" {
       days = 60
     }
   }
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["PUT", "POST", "GET"]
+    allowed_origins = ["*"]
+  }
 }
 
 resource "aws_iam_policy" "CodeDeploy-EC2-S3" {
@@ -457,12 +467,16 @@ resource "aws_iam_policy" "CodeDeploy-EC2-S3" {
       "Action": [
         "s3:Get*",
         "s3:List*",
-        "s3:DeleteObject"
+        "s3:Put*",
+        "s3:DeleteObject",
+        "s3:Delete*"
 	    ],
       "Effect": "Allow",
       "Resource": [
         "${aws_s3_bucket.codedeploy.arn}",
-		 	  "${aws_s3_bucket.codedeploy.arn}/*"
+		 	  "${aws_s3_bucket.codedeploy.arn}/*",
+        "${aws_s3_bucket.webapp.arn}",
+        "${aws_s3_bucket.webapp.arn}/*"
       ]
     }
   ]
@@ -482,6 +496,7 @@ resource "aws_iam_policy" "CircleCI-Upload-To-S3" {
           "Action": [
             "s3:PutObject",
             "s3:PutObjectAcl",
+            "s3:Put*",
             "s3:Get*",
             "s3:List*"
             ],
@@ -595,6 +610,21 @@ resource "aws_iam_policy" "circleci-ec2-ami" {
 EOF
 }
 
+resource "aws_iam_user_policy_attachment" "policy-attach-2" {
+  user       = "cicd"
+  policy_arn = "${aws_iam_policy.circleci-ec2-ami.arn}"
+}
+
+resource "aws_iam_user_policy_attachment" "policy-attach-1" {
+  user       = "cicd"
+  policy_arn = "${aws_iam_policy.CircleCI-Code-Deploy.arn}"
+}
+
+resource "aws_iam_user_policy_attachment" "policy-attach" {
+  user       = "cicd"
+  policy_arn = "${aws_iam_policy.CircleCI-Upload-To-S3.arn}"
+}
+
 resource "aws_iam_role_policy_attachment" "codedeploy_role_ec2role" {
     role       = "${aws_iam_role.CodeDeployEC2ServiceRole.name}"
     policy_arn = "${aws_iam_policy.CodeDeploy-EC2-S3.arn}"
@@ -603,6 +633,11 @@ resource "aws_iam_role_policy_attachment" "codedeploy_role_ec2role" {
 resource "aws_iam_role_policy_attachment" "codedeploy_role_servicerole" {
  role       = "${aws_iam_role.CodeDeployServiceRole.name}"
  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole"
+}
+
+resource "aws_iam_role_policy_attachment" "codedeploy_role2_ec2role" {
+    role       = "${aws_iam_role.CodeDeployEC2ServiceRole.name}"
+    policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
 resource "aws_codedeploy_app" "csye6225-webapp" {
@@ -639,47 +674,3 @@ resource "aws_codedeploy_deployment_group" "csye6225-webapp-deployment" {
     enabled = true
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
