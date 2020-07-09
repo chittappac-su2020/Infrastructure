@@ -55,12 +55,12 @@ variable "key_name"{
 
 variable "access_key"{
     type = string
-    default = "AKIAIHONCE3NH5AHHDHA"
+    default = "AKIAQGXHMIY7R7LTSKEA"
 }
 
 variable "secret_key"{
     type = string
-    default = "IOGLL6Uc95eNrV6+54ZQSib46MU801dKoChvZXZO"
+    default = "ggZ+7YofXhEuG1k6/kQGwlplKecjZ0jILL7Pm+7O"
 }
 
 variable "dname"{
