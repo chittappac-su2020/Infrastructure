@@ -1,4 +1,3 @@
-//This is variables file
 variable "aws_region"{
     type = string
 }
@@ -30,17 +29,14 @@ variable "route_cidr"{
 
 variable "subnet_availzone"{
     type = string
-    default = "us-east-1a"
 }
 
 variable "subnet2_availzone"{
     type = string
-    default = "us-east-1b"
 }
 
 variable "subnet3_availzone"{
     type = string
-    default = "us-east-1c"
 }
 
 variable "s3_bucket_name"{
@@ -56,7 +52,7 @@ variable "key_name"{
 variable "access_key"{
     type = string
     default = "AKIAQGXHMIY7R7LTSKEA"
-}
+}   
 
 variable "secret_key"{
     type = string
@@ -65,9 +61,29 @@ variable "secret_key"{
 
 variable "dname"{
     type = string
-    default = "chandrakanthchittappa.site"
+    default = "chandrakanthchittappa.site.tld"
 }
 
 variable "AMIid"{
     type = string
+}
+
+variable "keyname"{
+    type = string
+    default = "ssh"
+}
+
+variable "instance_name"{
+    type = string
+    default = "webapp"
+}
+
+variable "zone_id"{
+    type = string
+    default = "Z0259833JNL84YV5YUYU"
+}
+
+variable "csye_dns_name"{
+    type = string
+    default = "prod.chandrakanthchittappa.site"
 }

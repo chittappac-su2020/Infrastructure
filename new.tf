@@ -90,6 +90,69 @@ resource "aws_route_table_association" "routetableassociation3" {
   route_table_id = "${aws_route_table.routetable.id}"
 }
 
+resource "aws_security_group" "lbsecuritygrp" {
+  name        = "lbsecuritygrp"
+  description = "security group"
+  vpc_id      = "${aws_vpc.csye6225_demo_vpc.id}"
+
+  ingress {
+    description = "ssh"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    ipv6_cidr_blocks=["::/0"]
+  }
+
+  ingress {
+    description = "http"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    ipv6_cidr_blocks=["::/0"]
+  }
+
+  ingress {
+    description = "https"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    ipv6_cidr_blocks=["::/0"]
+  }
+
+  ingress {
+    description = "react"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    ipv6_cidr_blocks=["::/0"]
+  }
+
+
+  ingress {
+    description = "node"
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    ipv6_cidr_blocks=["::/0"]
+  }
+
+
+ egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = {
+    Name = "lbsecuritygrp"
+  }
+}
+
 resource "aws_security_group" "application" {
   name = "application"
   description = "Allowing HTTP connections"
@@ -99,35 +162,35 @@ resource "aws_security_group" "application" {
       from_port = 22
       to_port = 22
       protocol = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+      security_groups = ["${aws_security_group.lbsecuritygrp.id}"]
   }
   ingress{
       description = "http"
       from_port = 80
       to_port = 80
       protocol = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+      security_groups = ["${aws_security_group.lbsecuritygrp.id}"]
   }
   ingress{
       description = "https"
       from_port = 443
       to_port = 443
       protocol = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+      security_groups = ["${aws_security_group.lbsecuritygrp.id}"]
   }
   ingress{
       description = "react server"
       from_port = 3000
       to_port = 3000
       protocol = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+      security_groups = ["${aws_security_group.lbsecuritygrp.id}"]
   }
   ingress{
       description = "node server"
       from_port = 5000
       to_port = 5000
       protocol = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+      security_groups = ["${aws_security_group.lbsecuritygrp.id}"]
   }
   ingress{
       description = "ssh"
@@ -228,13 +291,9 @@ resource "aws_s3_bucket" "webapp" {
   }
 }
 
-data "aws_subnet_ids" "list" {
-  vpc_id = aws_vpc.csye6225_demo_vpc.id
-}
-
 resource "aws_db_subnet_group" "subnet_group_for_database_instance" {
   name       = "subnet_group_for_rds_instance"
-  subnet_ids = ["${element(tolist(data.aws_subnet_ids.list.ids), 0)}", "${element(tolist(data.aws_subnet_ids.list.ids), 1)}"]
+  subnet_ids = ["${aws_subnet.subnet.id}","${aws_subnet.subnet2.id}","${aws_subnet.subnet3.id}"]
 
   tags = {
     Name = "subnet_group_for_database_instance"
@@ -310,39 +369,39 @@ resource "aws_iam_instance_profile" "deployment_profile" {
   role = aws_iam_role.CodeDeployEC2ServiceRole.name
 }
 
-resource "aws_instance" "webinstance" {
-  ami           = var.AMIid
-  instance_type = "t2.micro"
-  vpc_security_group_ids = ["${aws_security_group.application.id}"]
-  subnet_id   = "${aws_subnet.subnet.id}"
-  iam_instance_profile = "${aws_iam_instance_profile.deployment_profile.name}"
-  associate_public_ip_address = "true"
-  key_name = "ssh"
-  disable_api_termination = false
+# resource "aws_instance" "webinstance" {
+#   ami           = var.AMIid
+#   instance_type = "t2.micro"
+#   vpc_security_group_ids = ["${aws_security_group.application.id}"]
+#   subnet_id   = "${aws_subnet.subnet.id}"
+#   iam_instance_profile = "${aws_iam_instance_profile.deployment_profile.name}"
+#   associate_public_ip_address = "true"
+#   key_name = "ssh"
+#   disable_api_termination = false
   
-  root_block_device {
-    volume_size = 20
-    volume_type = "gp2"
-  }
+#   root_block_device {
+#     volume_size = 20
+#     volume_type = "gp2"
+#   }
 
-  tags = {
-    Name = "Wep_App_Instance"
-  }
+#   tags = {
+#     Name = "Wep_App_Instance"
+#   }
 
-  user_data = <<-EOF
-                #!/bin/bash
-                sudo echo RDS_USERNAME=${aws_db_instance.csye6225.username} >> userdata.txt
-                sudo echo RDS_DATABASE_NAME=${aws_db_instance.csye6225.name} >> userdata.txt
-                sudo echo RDS_PASSWORD=${aws_db_instance.csye6225.password} >> userdata.txt
-                sudo echo RDS_HOSTNAME=${aws_db_instance.csye6225.address} >> userdata.txt
-                sudo echo S3_BUCKET_NAME=${aws_s3_bucket.webapp.bucket} >> userdata.txt
-                sudo echo APPLICATION_ENV=prod >> userdata.txt   
-                sudo echo bucket=webapp.chandrakanth.chittappac >> userdata.txt
-                sudo echo AWSAccessKeyId=${var.access_key} >> userdata.txt
-                sudo echo AWSSecretKey=${var.secret_key} >> userdata.txt
-                chmod 765 userdata.txt
-  EOF
-}
+#   user_data = <<-EOF
+#                 #!/bin/bash
+#                 sudo echo RDS_USERNAME=${aws_db_instance.csye6225.username} >> userdata.txt
+#                 sudo echo RDS_DATABASE_NAME=${aws_db_instance.csye6225.name} >> userdata.txt
+#                 sudo echo RDS_PASSWORD=${aws_db_instance.csye6225.password} >> userdata.txt
+#                 sudo echo RDS_HOSTNAME=${aws_db_instance.csye6225.address} >> userdata.txt
+#                 sudo echo S3_BUCKET_NAME=${aws_s3_bucket.webapp.bucket} >> userdata.txt
+#                 sudo echo APPLICATION_ENV=prod >> userdata.txt   
+#                 sudo echo bucket=webapp.chandrakanth.chittappac >> userdata.txt
+#                 sudo echo AWSAccessKeyId=${var.access_key} >> userdata.txt
+#                 sudo echo AWSSecretKey=${var.secret_key} >> userdata.txt
+#                 chmod 765 userdata.txt
+#   EOF
+# }
 
 
 resource "aws_dynamodb_table" "csye6225" {
@@ -640,6 +699,86 @@ resource "aws_iam_role_policy_attachment" "codedeploy_role2_ec2role" {
     policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
+resource "aws_lb_target_group" "awstargetgroup" {
+  name = "awstargetgroup"
+  target_type = "instance"
+  port = 3000
+  protocol = "HTTP"
+  vpc_id = aws_vpc.csye6225_demo_vpc.id
+}
+
+resource "aws_lb_listener" "lb_listener" {
+  load_balancer_arn = aws_lb.asg_load_balancer.arn
+  port = 80
+  protocol = "HTTP"
+  default_action {
+    type = "forward"
+    target_group_arn = aws_lb_target_group.awstargetgroup.arn
+  }
+}
+
+resource "aws_lb_target_group" "awstargetgroup2" {
+  name = "awstargetgroup2"
+  target_type = "instance"
+  port = 5000
+  protocol = "HTTP"
+  vpc_id = aws_vpc.csye6225_demo_vpc.id
+}
+
+resource "aws_lb_listener" "lb_listener2" {
+  load_balancer_arn = aws_lb.asg_load_balancer.arn
+  port = 5000
+  protocol = "HTTP"
+  default_action {
+    type = "forward"
+    target_group_arn = aws_lb_target_group.awstargetgroup2.arn
+  }
+}
+
+resource "aws_launch_configuration" "asg_launch_config" {
+  name                        = "asg_launch_config"
+  image_id                    = var.AMIid
+  key_name                    = var.keyname
+  instance_type               = "t2.micro"
+  associate_public_ip_address = true
+
+  user_data = <<-EOF
+                #!/bin/bash
+                sudo echo RDS_USERNAME=${aws_db_instance.csye6225.username} >> userdata.txt
+                sudo echo RDS_DATABASE_NAME=${aws_db_instance.csye6225.name} >> userdata.txt
+                sudo echo RDS_PASSWORD=${aws_db_instance.csye6225.password} >> userdata.txt
+                sudo echo RDS_HOSTNAME=${aws_db_instance.csye6225.address} >> userdata.txt
+                sudo echo S3_BUCKET_NAME=${aws_s3_bucket.webapp.bucket} >> userdata.txt
+                sudo echo APPLICATION_ENV=prod >> userdata.txt   
+                sudo echo bucket=webapp.chandrakanth.chittappac >> userdata.txt
+                sudo echo AWSAccessKeyId=${var.access_key} >> userdata.txt
+                sudo echo AWSSecretKey=${var.secret_key} >> userdata.txt
+                chmod 765 userdata.txt
+  EOF
+  iam_instance_profile        = "${aws_iam_instance_profile.deployment_profile.name}"
+  security_groups             = ["${aws_security_group.application.id}"]
+}
+
+resource "aws_autoscaling_group" "asg_autoscaling_group" {
+  name                      = "asg_autoscaling_group"
+  default_cooldown          = 60
+  max_size                  = 5
+  min_size                  = 2
+  desired_capacity          = 2
+  force_delete              = true
+  launch_configuration      = "${aws_launch_configuration.asg_launch_config.name}"
+  target_group_arns         = ["${aws_lb_target_group.awstargetgroup.arn}","${aws_lb_target_group.awstargetgroup2.arn}"]
+  vpc_zone_identifier       = ["${aws_subnet.subnet.id}", "${aws_subnet.subnet2.id}","${aws_subnet.subnet3.id}"]
+
+  tags = [
+    {
+      key                 = "webapp"
+      value               = "eni678gma"
+      propagate_at_launch = true
+    }
+  ]
+}
+
 resource "aws_codedeploy_app" "csye6225-webapp" {
   compute_platform = "Server"
   name             = "csye6225-webapp"
@@ -650,6 +789,7 @@ resource "aws_codedeploy_deployment_group" "csye6225-webapp-deployment" {
   deployment_group_name = "csye6225-webapp-deployment"
   deployment_config_name = "CodeDeployDefault.AllAtOnce"
   service_role_arn      = "${aws_iam_role.CodeDeployServiceRole.arn}"
+  depends_on  = [aws_iam_role.CodeDeployServiceRole,aws_autoscaling_group.asg_autoscaling_group]
 
   ec2_tag_set {
     ec2_tag_filter {
@@ -672,5 +812,78 @@ resource "aws_codedeploy_deployment_group" "csye6225-webapp-deployment" {
   alarm_configuration {
     alarms  = ["my-alarm-name"]
     enabled = true
+  }
+
+  autoscaling_groups = ["asg_autoscaling_group"]   
+}
+
+##Assignment 8 starts from here
+
+resource "aws_lb" "asg_load_balancer" {
+  name = "asgloadbalancer"
+  load_balancer_type = "application"
+  enable_deletion_protection = false
+  subnets = ["${aws_subnet.subnet.id}","${aws_subnet.subnet2.id}"]
+  security_groups = ["${aws_security_group.lbsecuritygrp.id}"]
+}
+
+resource "aws_autoscaling_policy" "aws_auto_scaling_policy_up" {
+  autoscaling_group_name = aws_autoscaling_group.asg_autoscaling_group.name
+  name = "aws_auto_scaling_policy_up"
+  adjustment_type = "ChangeInCapacity"
+  cooldown = 60
+  scaling_adjustment = 1
+}
+
+resource "aws_autoscaling_policy" "aws_auto_scaling_policy_down" {
+  autoscaling_group_name = aws_autoscaling_group.asg_autoscaling_group.name
+  name = "aws_auto_scaling_policy_down"
+  adjustment_type = "ChangeInCapacity"
+  cooldown = 60
+  scaling_adjustment = -1
+}
+
+resource "aws_cloudwatch_metric_alarm" "cpu_usage_high" {
+  alarm_name = "cpu_usage_high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods = 2
+  threshold = 5
+  metric_name = "CPUUtilization"
+  statistic = "Average"
+  namespace = "AWS/EC2"
+  dimensions = {
+    AutoScalingGroupName = "asg_autoscaling_group"
+  }
+
+  alarm_actions = [aws_autoscaling_policy.aws_auto_scaling_policy_up.arn]
+  alarm_description = "Scale-up if CPU > 5%"
+  period = "300"
+}
+
+resource "aws_cloudwatch_metric_alarm" "cpu_usage_low" {
+  alarm_name = "cpuusagelow"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods = 2
+  threshold = 3
+  metric_name = "CPUUtilization"
+  statistic = "Average"
+  namespace = "AWS/EC2"
+  dimensions = {
+    AutoScalingGroupName = "asg_autoscaling_group"
+  }
+  alarm_actions = [aws_autoscaling_policy.aws_auto_scaling_policy_down.arn]
+  alarm_description = "Scale-down if CPU < 3%"
+  period = "120"
+}
+
+resource "aws_route53_record" "csye_dns" {
+  name = var.csye_dns_name
+  zone_id = var.zone_id
+  type    = "A"
+
+  alias {
+    name                   = "${aws_lb.asg_load_balancer.dns_name}"
+    zone_id                = "${aws_lb.asg_load_balancer.zone_id}"
+    evaluate_target_health = true
   }
 }
