@@ -94,16 +94,7 @@ resource "aws_security_group" "lbsecuritygrp" {
   name        = "lbsecuritygrp"
   description = "security group"
   vpc_id      = "${aws_vpc.csye6225_demo_vpc.id}"
-
-  ingress {
-    description = "ssh"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    ipv6_cidr_blocks=["::/0"]
-  }
-
+  
   ingress {
     description = "http"
     from_port   = 80
@@ -369,6 +360,8 @@ resource "aws_iam_instance_profile" "deployment_profile" {
   role = aws_iam_role.CodeDeployEC2ServiceRole.name
 }
 
+
+
 # resource "aws_instance" "webinstance" {
 #   ami           = var.AMIid
 #   instance_type = "t2.micro"
@@ -417,7 +410,7 @@ resource "aws_dynamodb_table" "csye6225" {
   }
 }
 
-#
+# #
 
 resource "aws_iam_policy" "WebAppS3" {
   name        = "WebAppS3"
@@ -514,6 +507,28 @@ resource "aws_s3_bucket" "codedeploy" {
   }
 }
 
+resource "aws_s3_bucket" "lambda_codedeploy" {
+bucket = "codedeploy.lambda.service"
+acl    = "private"
+force_destroy = "true"
+tags = "${
+        map(
+        "Name", "lambda_codedeploy",
+      )
+  }"
+lifecycle_rule {
+    id      = "log/"
+    enabled = true
+  transition{
+    days = 30
+    storage_class = "STANDARD_IA"
+  }
+  expiration{
+    days = 60
+  }
+}
+}
+
 resource "aws_iam_policy" "CodeDeploy-EC2-S3" {
   name        = "CodeDeploy-EC2-S3"
   path        = "/"
@@ -535,7 +550,9 @@ resource "aws_iam_policy" "CodeDeploy-EC2-S3" {
         "${aws_s3_bucket.codedeploy.arn}",
 		 	  "${aws_s3_bucket.codedeploy.arn}/*",
         "${aws_s3_bucket.webapp.arn}",
-        "${aws_s3_bucket.webapp.arn}/*"
+        "${aws_s3_bucket.webapp.arn}/*",
+        "${aws_s3_bucket.lambda_codedeploy.arn}",
+        "${aws_s3_bucket.lambda_codedeploy.arn}/*"
       ]
     }
   ]
@@ -699,6 +716,11 @@ resource "aws_iam_role_policy_attachment" "codedeploy_role2_ec2role" {
     policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
+resource "aws_iam_role_policy_attachment" "codedeploy_role2_ec2role_sns" {
+    role       = "${aws_iam_role.CodeDeployEC2ServiceRole.name}"
+    policy_arn = "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+}
+
 resource "aws_lb_target_group" "awstargetgroup" {
   name = "awstargetgroup"
   target_type = "instance"
@@ -735,6 +757,10 @@ resource "aws_lb_listener" "lb_listener2" {
   }
 }
 
+resource "aws_sns_topic" "user_updates" {
+  name = "user-updates-topic"
+}
+
 resource "aws_launch_configuration" "asg_launch_config" {
   name                        = "asg_launch_config"
   image_id                    = var.AMIid
@@ -753,6 +779,7 @@ resource "aws_launch_configuration" "asg_launch_config" {
                 sudo echo bucket=webapp.chandrakanth.chittappac >> userdata.txt
                 sudo echo AWSAccessKeyId=${var.access_key} >> userdata.txt
                 sudo echo AWSSecretKey=${var.secret_key} >> userdata.txt
+                sudo echo TopicArn=${aws_sns_topic.user_updates.arn} >> userdata.txt
                 chmod 765 userdata.txt
   EOF
   iam_instance_profile        = "${aws_iam_instance_profile.deployment_profile.name}"
@@ -817,7 +844,7 @@ resource "aws_codedeploy_deployment_group" "csye6225-webapp-deployment" {
   autoscaling_groups = ["asg_autoscaling_group"]   
 }
 
-##Assignment 8 starts from here
+#Assignment 8 starts from here
 
 resource "aws_lb" "asg_load_balancer" {
   name = "asgloadbalancer"
@@ -887,3 +914,226 @@ resource "aws_route53_record" "csye_dns" {
     evaluate_target_health = true
   }
 }
+
+##Assignment 9 starts from here
+
+resource "aws_iam_role" "CodeDeployLambdaServiceRole" {
+name           = "CodeDeployLambdaServiceRole"
+path           = "/"
+force_detach_policies = "true"
+assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+tags = {
+Name = "CodeDeployLambdaServiceRole"
+}
+}
+data "archive_file" "dummy"{
+  type = "zip"
+  output_path = "lambda_function_payload.zip"
+
+  source{
+    content = "hello"
+    filename = "dummy.txt"
+  }
+}
+
+resource "aws_lambda_function" "lambdafunctionresource" {
+filename        = "${data.archive_file.dummy.output_path}"
+function_name   = "csye6225"
+role            = "${aws_iam_role.CodeDeployLambdaServiceRole.arn}"
+handler         = "index.handler"
+runtime         = "nodejs12.x"
+memory_size     = 256
+timeout         = 180
+reserved_concurrent_executions  = 5
+environment  {
+variables = {
+DOMAIN_NAME = var.csye_dns_name
+table  =  "csye6225"
+}
+}
+tags = {
+Name = "Lambda Email"
+}
+}
+
+resource "aws_sns_topic_subscription" "topicId" {
+topic_arn       = "${aws_sns_topic.user_updates.arn}"
+protocol        = "lambda"
+endpoint        = "${aws_lambda_function.lambdafunctionresource.arn}"
+}
+
+resource "aws_lambda_permission" "lambdapermission" {
+statement_id  = "AllowExecutionFromSNS"
+action        = "lambda:InvokeFunction"
+principal     = "sns.amazonaws.com"
+source_arn    = "${aws_sns_topic.user_updates.arn}"
+function_name = "${aws_lambda_function.lambdafunctionresource.function_name}"
+}
+
+resource "aws_iam_policy" "lambdapolicy" {
+name        = "lambdapolicy"
+policy =  <<EOF
+{
+          "Version" : "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "LambdaDynamoDBAccess",
+              "Effect": "Allow",
+              "Action": ["dynamodb:*"],
+              "Resource": "arn:aws:dynamodb:${var.aws_region}:${local.user_account_id}:table/dynamo_csye6225"
+            },
+            {
+              "Sid": "LambdaSESAccess",
+              "Effect": "Allow",
+              "Action": ["ses:*"],
+              "Resource": "arn:aws:ses:${var.aws_region}:${local.user_account_id}:identity/*"
+            },
+            {
+              "Sid": "LambdaS3Access",
+              "Effect": "Allow",
+              "Action": ["s3:*"],
+              "Resource": "arn:aws:s3:::${aws_s3_bucket.lambda_codedeploy.bucket}/*"
+            },
+            {
+              "Sid": "LambdaSNSAccess",
+              "Effect": "Allow",
+              "Action": ["sns:*"],
+              "Resource": "${aws_sns_topic.user_updates.arn}"
+            }
+          ]
+        }
+EOF
+}
+
+resource "aws_iam_policy" "topicpolicy" {
+name        = "topicpolicy"
+description = "topicpolicy"
+policy      = <<EOF
+{
+          "Version" : "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowEC2ToPublishToSNSTopic",
+              "Effect": "Allow",
+              "Action": ["sns:Publish",
+              "sns:CreateTopic"],
+              "Resource": "${aws_sns_topic.user_updates.arn}"
+            }
+          ]
+        }
+EOF
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_policy_attach_predefinedrole" {
+role       = "${aws_iam_role.CodeDeployLambdaServiceRole.name}"
+policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_policy_attach_role" {
+role       = "${aws_iam_role.CodeDeployLambdaServiceRole.name}"
+policy_arn = "${aws_iam_policy.lambdapolicy.arn}"
+}
+
+resource "aws_iam_role_policy_attachment" "topic_policy_attach_role" {
+role       = "${aws_iam_role.CodeDeployLambdaServiceRole.name}"
+policy_arn = "${aws_iam_policy.topicpolicy.arn}"
+}
+
+resource "aws_iam_role_policy_attachment" "bucket_policy_attach_role" {
+role       = "${aws_iam_role.CodeDeployLambdaServiceRole.name}"
+policy_arn = "${aws_iam_policy.CodeDeploy-EC2-S3.arn}"
+}
+
+resource "aws_iam_role_policy_attachment" "dynamo_policy_attach_role" {
+role       = "${aws_iam_role.CodeDeployLambdaServiceRole.name}"
+policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
