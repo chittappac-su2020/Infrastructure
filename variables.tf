@@ -1,5 +1,6 @@
 variable "aws_region"{
     type = string
+    default = "us-east-1"
 }
 
 variable "vpc_cidr"{
@@ -29,15 +30,20 @@ variable "route_cidr"{
 
 variable "subnet_availzone"{
     type = string
+    default = "us-east-1a"
 }
 
 variable "subnet2_availzone"{
     type = string
+    default = "us-east-1b"
 }
 
 variable "subnet3_availzone"{
     type = string
+    default = "us-east-1c"
 }
+
+//
 
 variable "s3_bucket_name"{
     type = string
@@ -66,6 +72,7 @@ variable "dname"{
 
 variable "AMIid"{
     type = string
+    default = "ami-0901def61c71d543b"
 }
 
 variable "keyname"{
@@ -86,4 +93,9 @@ variable "zone_id"{
 variable "csye_dns_name"{
     type = string
     default = "prod.chandrakanthchittappa.site"
+}
+
+variable "codedeploy_lambda_s3_bucket"{
+    type = string 
+    default = "codedeploy.lambda.service"
 }
