@@ -43,6 +43,8 @@ variable "subnet3_availzone"{
     default = "us-east-1c"
 }
 
+//
+
 variable "s3_bucket_name"{
     type = string
     default = "webapp"
