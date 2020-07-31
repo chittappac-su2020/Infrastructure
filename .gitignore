@@ -1,3 +1,6 @@
 terraform.tfstate.backup
 .terraform/
 .DS_Store
+key.pem
+certificate.pem
+
