@@ -70,7 +70,6 @@ variable "dname"{
 
 variable "AMIid"{
     type = string
-    default = "ami-0901def61c71d543b"
 }
 
 variable "keyname"{

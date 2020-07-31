@@ -188,36 +188,36 @@ resource "aws_security_group" "application" {
       from_port = 22
       to_port = 22
       protocol = "tcp"
-      ipv6_cidr_blocks = ["::/0"]
+      cidr_blocks = ["0.0.0.0/0"]
   }
-  ingress{
-      description = "http"
-      from_port = 80
-      to_port = 80
-      protocol = "tcp"
-      ipv6_cidr_blocks = ["::/0"]
-  }
-  ingress{
-      description = "https"
-      from_port = 443
-      to_port = 443
-      protocol = "tcp"
-      ipv6_cidr_blocks = ["::/0"]
-  }
-  ingress{
-      description = "react server"
-      from_port = 3000
-      to_port = 3000
-      protocol = "tcp"
-      ipv6_cidr_blocks = ["::/0"]
-  }
-  ingress{
-      description = "node server"
-      from_port = 5000
-      to_port = 5000
-      protocol = "tcp"
-      ipv6_cidr_blocks = ["::/0"]
-  }
+  # ingress{
+  #     description = "http"
+  #     from_port = 80
+  #     to_port = 80
+  #     protocol = "tcp"
+  #     ipv6_cidr_blocks = ["::/0"]
+  # }
+  # ingress{
+  #     description = "https"
+  #     from_port = 443
+  #     to_port = 443
+  #     protocol = "tcp"
+  #     ipv6_cidr_blocks = ["::/0"]
+  # }
+  # ingress{
+  #     description = "react server"
+  #     from_port = 3000
+  #     to_port = 3000
+  #     protocol = "tcp"
+  #     ipv6_cidr_blocks = ["::/0"]
+  # }
+  # ingress{
+  #     description = "node server"
+  #     from_port = 5000
+  #     to_port = 5000
+  #     protocol = "tcp"
+  #     ipv6_cidr_blocks = ["::/0"]
+  # }
   egress {
     from_port   = 0
     to_port     = 0
@@ -295,12 +295,12 @@ resource "aws_db_instance" "csye6225" {
   allocated_storage          = 20
   storage_type               = "gp2"
   engine                     = "mysql"
-  engine_version             = "5.7"
+  engine_version             = "8.0"
   instance_class             = "db.t3.micro"
   name                       = "csye6225"
   username                   = "csye6225_su2020"
   password                   = "Chandrakanth1234"
-  parameter_group_name       = "default.mysql5.7"
+  parameter_group_name       = "csye6225"
   multi_az                   = false
   identifier                 = "csye6225-su2020"
   db_subnet_group_name       = aws_db_subnet_group.subnet_group_for_database_instance.name
@@ -308,6 +308,18 @@ resource "aws_db_instance" "csye6225" {
   vpc_security_group_ids     = [aws_security_group.database.id]
   final_snapshot_identifier  = "db1-final-snapshot"
   skip_final_snapshot        = "true"
+  storage_encrypted = true
+}
+
+resource "aws_db_parameter_group" "param" {
+  name = "csye6225"
+  family = "mysql8.0"
+
+  parameter {
+    name = "performance_schema"
+    value = "1"
+    apply_method = "pending-reboot"
+  }
 }
 
 resource "aws_iam_role" "CodeDeployServiceRole" {
@@ -721,6 +733,11 @@ resource "aws_iam_role_policy_attachment" "codedeploy_role2_ec2role_sns" {
     policy_arn = "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
 }
 
+resource "aws_acm_certificate" "cert" {
+  private_key      = "${file("key.pem")}"
+  certificate_body = "${file("certificate.pem")}"
+}
+
 resource "aws_lb_target_group" "awstargetgroup" {
   name = "awstargetgroup"
   target_type = "instance"
@@ -729,14 +746,26 @@ resource "aws_lb_target_group" "awstargetgroup" {
   vpc_id = aws_vpc.csye6225_demo_vpc.id
 }
 
-resource "aws_lb_listener" "lb_listener" {
+# resource "aws_lb_listener" "lb_listener" {
+#   load_balancer_arn = aws_lb.asg_load_balancer.arn
+#   port = 80
+#   protocol = "HTTPS"
+#   certificate_arn = aws_acm_certificate.cert.arn
+#   default_action {
+#     type = "forward"
+#     target_group_arn = aws_lb_target_group.awstargetgroup.arn
+#   }
+# }
+
+resource "aws_lb_listener" "lb_listener3" {
   load_balancer_arn = aws_lb.asg_load_balancer.arn
-  port = 80
-  protocol = "HTTP"
+  port = "443"
+  protocol = "HTTPS"
+  certificate_arn = "arn:aws:acm:us-east-1:014443890239:certificate/adf96349-b77c-4537-bb6d-c93df71a19d8"
   default_action {
     type = "forward"
     target_group_arn = aws_lb_target_group.awstargetgroup.arn
-  }
+  } 
 }
 
 resource "aws_lb_target_group" "awstargetgroup2" {
@@ -749,8 +778,9 @@ resource "aws_lb_target_group" "awstargetgroup2" {
 
 resource "aws_lb_listener" "lb_listener2" {
   load_balancer_arn = aws_lb.asg_load_balancer.arn
-  port = 5000
-  protocol = "HTTP"
+  port = "5000"
+  protocol = "HTTPS"
+  certificate_arn = "arn:aws:acm:us-east-1:014443890239:certificate/adf96349-b77c-4537-bb6d-c93df71a19d8"
   default_action {
     type = "forward"
     target_group_arn = aws_lb_target_group.awstargetgroup2.arn
@@ -1062,78 +1092,3 @@ resource "aws_iam_role_policy_attachment" "dynamo_policy_attach_role" {
 role       = "${aws_iam_role.CodeDeployLambdaServiceRole.name}"
 policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
